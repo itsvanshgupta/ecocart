@@ -1,69 +1,85 @@
-import Image from "next/image";
+import Link from 'next/link'
 
-export default function Home() {
+export default function HomePage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
+    <div>
+      {/* Hero */}
+      <div style={{
+        background: 'linear-gradient(135deg, #0F6E56 0%, #1D9E75 100%)',
+        padding: '80px 24px',
+        textAlign: 'center',
+        color: 'white'
+      }}>
+        <div style={{ maxWidth: '640px', margin: '0 auto' }}>
+          <div style={{ fontSize: '48px', marginBottom: '16px' }}>🌿</div>
+          <h1 style={{ fontSize: '48px', fontWeight: '700', marginBottom: '16px', lineHeight: 1.2 }}>
+            Shop with the planet in mind
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p style={{ fontSize: '18px', opacity: 0.9, marginBottom: '32px', lineHeight: 1.6 }}>
+            Every product AI-graded for sustainability. See exactly why something is eco-friendly — or not.
           </p>
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link href="/store">
+              <button style={{
+                padding: '14px 32px',
+                borderRadius: '8px',
+                backgroundColor: '#E55A2B',
+                color: 'white',
+                fontSize: '16px',
+                fontWeight: '600',
+                border: 'none',
+                cursor: 'pointer'
+              }}>
+                Browse Green Store
+              </button>
+            </Link>
+            <Link href="/login">
+              <button style={{
+                padding: '14px 32px',
+                borderRadius: '8px',
+                backgroundColor: 'rgba(255,255,255,0.2)',
+                color: 'white',
+                fontSize: '16px',
+                fontWeight: '600',
+                border: '1px solid rgba(255,255,255,0.4)',
+                cursor: 'pointer'
+              }}>
+                Get started free
+              </button>
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+      </div>
+
+      {/* Features */}
+      <div style={{ padding: '64px 24px', maxWidth: '1000px', margin: '0 auto' }}>
+        <h2 style={{ textAlign: 'center', fontSize: '32px', fontWeight: '700', marginBottom: '48px' }}>
+          Why EcoCart?
+        </h2>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+          gap: '24px'
+        }}>
+          {[
+            { icon: '🤖', title: 'AI Eco-Grading', desc: 'Claude grades every product A–F across 5 sustainability dimensions with plain-English explanations' },
+            { icon: '🔍', title: 'Greener Alternatives', desc: 'Always see a greener version of what you\'re looking at, powered by semantic AI search' },
+            { icon: '📊', title: 'Carbon Dashboard', desc: 'Track your personal CO₂ savings with real-world equivalencies updated after every purchase' },
+            { icon: '👥', title: 'Group Buying', desc: 'Join others buying the same product — unlock lower prices and see your collective impact' },
+          ].map((f, i) => (
+            <div key={i} style={{
+              background: '#F5F5F0',
+              borderRadius: '12px',
+              padding: '24px',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '32px', marginBottom: '12px' }}>{f.icon}</div>
+              <h3 style={{ fontSize: '16px', fontWeight: '600', marginBottom: '8px' }}>{f.title}</h3>
+              <p style={{ fontSize: '14px', color: '#666', lineHeight: 1.6 }}>{f.desc}</p>
+            </div>
+          ))}
         </div>
-      </main>
+      </div>
     </div>
-  );
+  )
 }
