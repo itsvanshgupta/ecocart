@@ -437,7 +437,7 @@ document.querySelector('#cartCheckout')?.addEventListener('click', async () => {
 let products = [
   {id:'p-1', name:'Cloud Cotton Towels',    category:'Home',   price:'₹1,290', priceNum:1290,  grade:'A', carbon:'1.2kg less CO₂', carbonSaved:1.2, icon:'▧', color:'#adcfa1', rot:'-7deg', note:'Organic, GOTS-certified cotton and plastic-free delivery.', material:'GOTS organic cotton', packaging:'Plastic-free paper wrap', certification:'GOTS', origin:'India', dimensions:{materials:'A',packaging:'A',carbon:'A',ethics:'A',durability:'A'}, aiExplanation:'Grade A: GOTS organic cotton avoids conventional pesticide intensity, while plastic-free delivery keeps packaging impact low.'},
   {id:'p-2', name:'Refillable Hand Wash',   category:'Beauty', price:'₹440',   priceNum:440,   grade:'A', carbon:'0.6kg less CO₂', carbonSaved:0.6, icon:'◒', color:'#d6bd91', rot:'0deg',  note:'A forever bottle with low-water refill pouches.', material:'Plant-based formula', packaging:'Reusable bottle and refill pouch', certification:'Cruelty Free', origin:'India', dimensions:{materials:'A',packaging:'A',carbon:'A',ethics:'B',durability:'A'}, aiExplanation:'Grade A: The durable bottle removes repeat single-use packaging and compact refills reduce transport emissions.'},
-  {id:'p-3', name:'Bamboo Everyday Tee',    category:'Beauty', price:'₹1,690', priceNum:1690,  grade:'B', carbon:'2.8kg less CO₂', carbonSaved:2.8, icon:'♧', color:'#95b99c', rot:'6deg',  note:'Soft bamboo fibre, responsibly dyed, made to last.', material:'Bamboo viscose blend', packaging:'Recycled paper mailer', certification:'OEKO-TEX', origin:'India', dimensions:{materials:'B',packaging:'A',carbon:'A',ethics:'B',durability:'B'}, aiExplanation:'Grade B: Bamboo is a lower-impact fibre than conventional options. Strong carbon and packaging performance.'},
+  {id:'p-3', name:'Bamboo Everyday Tee',    category:'Clothing', price:'₹1,690', priceNum:1690,  grade:'B', carbon:'2.8kg less CO₂', carbonSaved:2.8, icon:'♧', color:'#95b99c', rot:'6deg',  note:'Soft bamboo fibre, responsibly dyed, made to last.', material:'Bamboo viscose blend', packaging:'Recycled paper mailer', certification:'OEKO-TEX', origin:'India', dimensions:{materials:'B',packaging:'A',carbon:'A',ethics:'B',durability:'B'}, aiExplanation:'Grade B: Bamboo is a lower-impact fibre than conventional options. Strong carbon and packaging performance.'},
   {id:'p-4', name:'Compostable Coffee Pods',category:'Food',   price:'₹590',   priceNum:590,   grade:'A', carbon:'0.9kg less CO₂', carbonSaved:0.9, icon:'◉', color:'#ccad72', rot:'-6deg', note:'Rich coffee in a home-compostable plant-fibre pod.', material:'Coffee and plant fibre', packaging:'Home-compostable pod', certification:'Fairtrade', origin:'India', dimensions:{materials:'A',packaging:'A',carbon:'A',ethics:'A',durability:'B'}, aiExplanation:'Grade A: Plant-fibre pods are designed to break down at home, avoiding aluminium or plastic single-serve waste.'},
   {id:'p-5', name:'Cork Yoga Block',        category:'Home',   price:'₹890',   priceNum:890,   grade:'A', carbon:'1.5kg less CO₂', carbonSaved:1.5, icon:'▰', color:'#b89a67', rot:'-8deg', note:'Naturally renewable cork, with no synthetic foam.', material:'Renewable natural cork', packaging:'No-plastic wrap', certification:'FSC', origin:'Portugal', dimensions:{materials:'A',packaging:'A',carbon:'A',ethics:'B',durability:'A'}, aiExplanation:'Grade A: Cork regenerates naturally after harvesting and replaces synthetic foam with a long-lived, biodegradable material.'},
   {id:'p-6', name:'Botanical Dish Bar',     category:'Home',   price:'₹260',   priceNum:260,   grade:'B', carbon:'0.4kg less CO₂', carbonSaved:0.4, icon:'▣', color:'#b6d7a5', rot:'3deg',  note:'Concentrated cleaning power without a single-use bottle.', material:'Plant-based surfactants', packaging:'Recyclable paper box', certification:'Leaping Bunny', origin:'India', dimensions:{materials:'A',packaging:'B',carbon:'B',ethics:'A',durability:'B'}, aiExplanation:'Grade B: A water-light solid format avoids a plastic bottle and lowers shipping weight with recyclable packaging.'},
@@ -486,9 +486,6 @@ async function loadProductCatalog() {
 
 // ─── Store render with search + sort ───────────────────────────────────────
 function gradeValue(grade) { return { A: 6, B: 5, C: 4, D: 3, E: 2, F: 1 }[grade] || 0; }
-function greenerAlternative(product) {
-  return products.find(item => item.category === product.category && item.name !== product.name && gradeValue(item.grade) > gradeValue(product.grade));
-}
 
 function render() {
   const filter = document.querySelector('.chip.active')?.dataset.filter || 'all';
@@ -562,7 +559,6 @@ grid.addEventListener('click', e => {
 
 function openProductDialog(p, idx) {
   const d   = p.dimensions || { materials: 'A', packaging: 'A', carbon: p.grade, ethics: 'A', durability: 'B' };
-  const alt = greenerAlternative(p);
   const img = PRODUCT_IMAGES[p.name] || '';
 
   content.innerHTML = `
@@ -595,7 +591,9 @@ function openProductDialog(p, idx) {
 
       <p class="dialog-explain">${p.aiExplanation || 'EcoCart\'s AI grading engine analyzes material life cycles, transport footprints, and end-of-life circularity to calculate this score.'}</p>
 
-      ${alt ? `<p class="recommendation"><b>Greener alternative</b> ${alt.name} is a Grade ${alt.grade} option in ${alt.category}.</p>` : ''}
+      <p class="recommendation" id="ragRecommendation" data-product-id="${p.id || ''}" aria-live="polite">
+        <b>Finding a greener alternative…</b>
+      </p>
 
       <div class="purchase-row">
         <select id="packageChoice" aria-label="Packaging choice">
@@ -614,6 +612,38 @@ function openProductDialog(p, idx) {
       </div>
     </div>`;
   dialog.showModal();
+  loadRagRecommendation(p);
+}
+
+async function loadRagRecommendation(product) {
+  const recommendation = content.querySelector('#ragRecommendation');
+  if (!recommendation) return;
+
+  try {
+    const hasDatabaseId = /^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(product.id || '');
+    const endpoint = hasDatabaseId
+      ? `${API_BASE_URL}/api/ai/recommendations/${encodeURIComponent(product.id)}`
+      : `${API_BASE_URL}/api/ai/recommendations/by-name?name=${encodeURIComponent(product.name)}`;
+    const response = await fetch(endpoint);
+    if (!response.ok) throw new Error(`Recommendation request failed: ${response.status}`);
+
+    const data = await response.json();
+    const alternative = data.recommendations?.[0];
+
+    // The user may have opened a different product while this request was running.
+    if (!dialog.open || recommendation.dataset.productId !== product.id) return;
+
+    if (!alternative) {
+      recommendation.innerHTML = '<b>Excellent choice</b> This product is already among our highest EcoCart-rated options.';
+      return;
+    }
+
+    recommendation.innerHTML =
+      `<b>Greener alternative · RAG matched</b> ${alternative.name} is a Grade ${alternative.eco_grade} option ` +
+      `with ${(Number(alternative.similarity || 0) * 100).toFixed(0)}% semantic similarity.`;
+  } catch {
+    recommendation.hidden = true;
+  }
 }
 
 // ─── Dialog action handler (Add to Cart / Buy Now) ─────────────────────────

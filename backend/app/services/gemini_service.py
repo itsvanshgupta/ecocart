@@ -141,6 +141,21 @@ Certifications: {certification or 'None specified'}
         return res
 
 
+def embed_text(text: str) -> List[float]:
+    """Create a 768-dimensional embedding for semantic product retrieval."""
+    if not _gemini_client:
+        raise RuntimeError("Gemini is not configured. Set GEMINI_API_KEY in backend/.env.")
+
+    response = _gemini_client.models.embed_content(
+        model="gemini-embedding-001",
+        contents=text,
+        config={"output_dimensionality": 768},
+    )
+    if not response.embeddings:
+        raise RuntimeError("Gemini returned no embedding.")
+    return list(response.embeddings[0].values)
+
+
 def chat_eco_advisor(message: str, history: Optional[List[Dict[str, str]]] = None, product_context: Optional[str] = None) -> str:
     """Conversational AI Sustainability Advisor using Gemini or fallback."""
     if not _gemini_client:

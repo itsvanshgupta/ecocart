@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from app.config import ALLOWED_ORIGINS, GEMINI_API_KEY
 from app.services.gemini_service import grade_product, chat_eco_advisor
+from app.services.vector_service import find_greener_alternatives, find_greener_alternatives_by_name
 
 app = FastAPI(
     title="EcoCart AI API",
@@ -104,23 +105,26 @@ def api_eco_chat(req: ChatRequest):
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
 
 
+@app.get("/api/ai/recommendations/by-name")
+def api_recommendations_by_name(name: str):
+    """Return RAG recommendations for a locally rendered catalog product."""
+    try:
+        return {"product_name": name, "recommendations": find_greener_alternatives_by_name(name)}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Recommendation search failed: {exc}")
+
+
 @app.get("/api/ai/recommendations/{product_id}")
-def api_recommendations(product_id: str, category: Optional[str] = None):
+def api_recommendations(product_id: str):
     """
-    Return greener swap recommendations for a given product or category.
+    Return semantically similar products with a higher EcoCart grade.
     """
-    return {
-        "product_id": product_id,
-        "recommendations": [
-            {
-                "name": "Cloud Cotton Towels",
-                "grade": "A",
-                "reason": "100% GOTS organic certified cotton with plastic-free packaging."
-            },
-            {
-                "name": "Refillable Hand Wash",
-                "grade": "A",
-                "reason": "Zero single-use plastic with ultra-concentrated refill pouch."
-            }
-        ]
-    }
+    try:
+        recommendations = find_greener_alternatives(product_id)
+        return {"product_id": product_id, "recommendations": recommendations}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Recommendation search failed: {exc}")
