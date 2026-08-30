@@ -151,6 +151,7 @@ function enterStore(user) {
   loadProductCatalog();
   loadImpactDashboard();
   loadGroupBuys();
+  subscribeToGroupBuyUpdates();
   checkBackendHealth();
 }
 
@@ -287,6 +288,10 @@ document.querySelector('#authSwitch').addEventListener('click', event => {
 document.querySelector('#logoutButton').addEventListener('click', async () => {
   if (supabaseClient) {
     try { await supabaseClient.auth.signOut(); } catch {}
+    if (groupBuysSubscription) {
+      try { await supabaseClient.removeChannel(groupBuysSubscription); } catch {}
+      groupBuysSubscription = null;
+    }
   }
   clearSession();
   authScreen.classList.remove('is-hidden');
@@ -837,10 +842,29 @@ const DEFAULT_GROUP_BUYS = [
 ];
 
 const groupbuysGrid = document.querySelector('#groupbuysGrid');
+let groupBuysSubscription = null;
 
 async function loadGroupBuys() {
   let list = DEFAULT_GROUP_BUYS;
   let totalMembers = 0;
+
+  // Signed-in users read live data; guests keep the usable demo fallback.
+  if (supabaseClient && currentUser && !String(currentUser.id || '').startsWith('demo-')) {
+    try {
+      const { data, error } = await supabaseClient
+        .from('group_buys')
+        .select('id,title,target_members,discount_percent,products(name,icon,accent_color,eco_grade),group_buy_members(count)')
+        .eq('is_active', true)
+        .order('created_at');
+      if (!error && data?.length) {
+        list = data.map(groupBuy => ({
+          ...groupBuy,
+          base_count: groupBuy.group_buy_members?.[0]?.count || 0,
+          product: groupBuy.products || {}
+        }));
+      }
+    } catch {}
+  }
 
   groupbuysGrid.innerHTML = list.map((gb) => {
     const localJoined = currentUser ? getLocalGroupMembers(gb.id).includes(currentUser.id) : false;
@@ -870,6 +894,15 @@ async function loadGroupBuys() {
 
   const totalEl = document.querySelector('#groupTotalMembers');
   if (totalEl) totalEl.textContent = totalMembers || '—';
+}
+
+function subscribeToGroupBuyUpdates() {
+  if (!supabaseClient || !currentUser || String(currentUser.id || '').startsWith('demo-') || groupBuysSubscription) return;
+  groupBuysSubscription = supabaseClient
+    .channel('ecocart-group-buy-updates')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'group_buy_members' }, loadGroupBuys)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'group_buys' }, loadGroupBuys)
+    .subscribe();
 }
 
 // Show the available circles before sign-in; authentication is required only
