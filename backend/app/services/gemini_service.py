@@ -5,13 +5,13 @@ from app.config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
 
-# Initialize Gemini if key is provided
+# Initialize Gemini if key is provided.  The legacy google-generativeai SDK is
+# deprecated; use the current Google GenAI SDK instead.
 _gemini_client = None
 if GEMINI_API_KEY:
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        _gemini_client = genai
+        from google import genai
+        _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
         logger.info("Google Gemini AI client configured successfully.")
     except Exception as e:
         logger.warning(f"Could not configure Google Gemini client: {e}")
@@ -117,10 +117,6 @@ def grade_product(product_name: str, material: str, packaging: str, origin_count
         return _heuristic_grade(product_name, material, packaging, certification, origin_country)
     
     try:
-        model = _gemini_client.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            generation_config={"response_mime_type": "application/json"}
-        )
         user_prompt = f"""Evaluate this product:
 Product Name: {product_name}
 Materials: {material}
@@ -128,13 +124,15 @@ Packaging: {packaging}
 Origin Country: {origin_country or 'Not specified'}
 Certifications: {certification or 'None specified'}
 """
-        response = model.generate_content([
-            {"role": "user", "parts": [GRADING_SYSTEM_PROMPT, user_prompt]}
-        ])
+        response = _gemini_client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=f"{GRADING_SYSTEM_PROMPT}\n\n{user_prompt}",
+            config={"response_mime_type": "application/json"},
+        )
         
         raw_text = response.text.strip()
         data = json.loads(raw_text)
-        data["engine"] = "gemini_1.5_flash"
+        data["engine"] = "gemini_3.6_flash"
         return data
     except Exception as e:
         logger.error(f"Gemini API grading error: {e}. Falling back to rule engine.")
@@ -158,8 +156,6 @@ def chat_eco_advisor(message: str, history: Optional[List[Dict[str, str]]] = Non
             return f"Hello! I am your EcoCart Advisor. I can help evaluate material sustainability, calculate CO₂ savings, or suggest greener alternatives for your cart. What product are you considering?"
 
     try:
-        model = _gemini_client.GenerativeModel(model_name="gemini-1.5-flash")
-        
         prompt_parts = [ECO_CHAT_SYSTEM_PROMPT]
         if product_context:
             prompt_parts.append(f"Current Product Context:\n{product_context}")
@@ -170,9 +166,11 @@ def chat_eco_advisor(message: str, history: Optional[List[Dict[str, str]]] = Non
                 
         prompt_parts.append(f"User: {message}")
         
-        response = model.generate_content("\n\n".join(prompt_parts))
+        response = _gemini_client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents="\n\n".join(prompt_parts),
+        )
         return response.text.strip()
     except Exception as e:
         logger.error(f"Gemini chat error: {e}")
         return "I'm having a brief connection delay with my AI engine, but I recommend choosing plastic-free and refillable alternatives whenever possible!"
-

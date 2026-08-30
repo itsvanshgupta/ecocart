@@ -56,6 +56,12 @@ create table if not exists public.products (
   created_at timestamptz not null default now()
 );
 
+-- Existing EcoCart projects created before this schema may already have a
+-- products table. CREATE TABLE IF NOT EXISTS does not add newly introduced
+-- columns, so add this one explicitly before the RLS policy below uses it.
+alter table public.products
+add column if not exists is_active boolean not null default true;
+
 create table if not exists public.carbon_log (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -76,6 +82,10 @@ create table if not exists public.group_buys (
   is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
+
+-- Same compatibility protection for pre-existing group_buy tables.
+alter table public.group_buys
+add column if not exists is_active boolean not null default true;
 
 create table if not exists public.group_buy_members (
   group_buy_id uuid not null references public.group_buys(id) on delete cascade,
@@ -98,6 +108,94 @@ create table if not exists public.user_badges (
   earned_at timestamptz not null default now(),
   primary key (user_id, badge_id)
 );
+
+-- ── Compatibility migration for the original EcoCart database ──────────────
+-- The first prototype used different shapes for products, carbon_log,
+-- group_buys, and badges. These statements only add/populate new fields;
+-- they never remove existing rows or columns.
+alter table public.products add column if not exists slug text;
+alter table public.products add column if not exists price_inr integer not null default 0;
+alter table public.products add column if not exists eco_grade text not null default 'B';
+alter table public.products add column if not exists carbon_saved_kg numeric(6,2) not null default 0;
+alter table public.products add column if not exists material text not null default 'Not specified';
+alter table public.products add column if not exists packaging text not null default 'Not specified';
+alter table public.products add column if not exists certification text;
+alter table public.products add column if not exists origin_country text;
+alter table public.products add column if not exists icon text not null default '◉';
+alter table public.products add column if not exists accent_color text not null default '#adcfa1';
+alter table public.products add column if not exists eco_dimensions jsonb not null default '{"materials":"B","packaging":"B","carbon":"B","ethics":"B","durability":"B"}'::jsonb;
+alter table public.products add column if not exists is_active boolean not null default true;
+
+update public.products
+set slug = lower(regexp_replace(trim(name), '[^a-z0-9]+', '-', 'g')) || '-' || left(id::text, 8)
+where slug is null or btrim(slug) = '';
+
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'products' and column_name = 'metadata') then
+    execute $sql$
+      update public.products
+      set material = coalesce(nullif(metadata ->> 'materials', ''), material),
+          packaging = coalesce(nullif(metadata ->> 'packaging_type', ''), packaging),
+          origin_country = coalesce(origin_country, nullif(metadata ->> 'origin_country', ''))
+      where metadata is not null
+    $sql$;
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'products' and column_name = 'price') then
+    execute 'update public.products set price_inr = round(price * 85)::integer where price_inr = 0 and price is not null';
+    execute 'alter table public.products alter column price set default 0';
+  end if;
+end;
+$$;
+
+alter table public.products alter column slug set not null;
+create unique index if not exists products_slug_unique_idx on public.products (slug);
+
+alter table public.carbon_log add column if not exists purchase_amount_inr integer;
+alter table public.carbon_log add column if not exists created_at timestamptz not null default now();
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'carbon_log' and column_name = 'purchase_date') then
+    execute 'update public.carbon_log set created_at = purchase_date where purchase_date is not null';
+  end if;
+end;
+$$;
+
+alter table public.group_buys add column if not exists title text not null default 'EcoCart buying circle';
+alter table public.group_buys add column if not exists target_members integer not null default 1;
+alter table public.group_buys add column if not exists discount_percent integer not null default 0;
+alter table public.group_buys add column if not exists closes_at timestamptz;
+alter table public.group_buys add column if not exists is_active boolean not null default true;
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'group_buys' and column_name = 'target_count') then
+    execute 'update public.group_buys set target_members = target_count where target_count is not null';
+    execute 'alter table public.group_buys alter column target_count set default 1';
+  end if;
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'group_buys' and column_name = 'expires_at') then
+    execute 'update public.group_buys set closes_at = expires_at where closes_at is null and expires_at is not null';
+    execute 'alter table public.group_buys alter column expires_at set default (now() + interval ''7 days'')';
+  end if;
+end;
+$$;
+
+alter table public.badges add column if not exists code text;
+alter table public.badges add column if not exists name text;
+alter table public.badges add column if not exists description text;
+alter table public.badges add column if not exists icon text not null default '✦';
+update public.badges
+set code = coalesce(nullif(code, ''), 'legacy-' || id::text),
+    name = coalesce(nullif(name, ''), 'Legacy Eco Badge'),
+    description = coalesce(nullif(description, ''), 'Award imported from the original EcoCart catalog.');
+do $$
+begin
+  if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'badges' and column_name = 'badge_type') then
+    execute 'update public.badges set name = badge_type where name = ''Legacy Eco Badge'' and badge_type is not null';
+    execute 'alter table public.badges alter column badge_type drop not null';
+  end if;
+end;
+$$;
+create unique index if not exists badges_code_unique_idx on public.badges (code);
 
 alter table public.profiles enable row level security;
 alter table public.products enable row level security;

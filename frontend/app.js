@@ -6,8 +6,8 @@ const API_BASE_URL = 'http://localhost:8000';
 
 // ─── Supabase client ────────────────────────────────────────────────────────
 // Replace with your real Supabase project URL and anon public key from supabase.com
-const SUPABASE_URL = 'https://bixnshluijxszjskhbxk.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_aXP8SGuQcHUi8OQyPxgXLA_yx75B2oO';
+const SUPABASE_URL = 'https://deitynnbjeecmxasmufm.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_7E25OS9oBGkk-duRYNUz-Q_mmGitUuj';
 
 let supabaseClient = null;
 try {
@@ -298,16 +298,6 @@ document.querySelector('#logoutButton').addEventListener('click', async () => {
   updateCartBadge();
   showToast('Signed out successfully');
 });
-
-// Auto-restore session on page load
-const savedUser = getSavedSession();
-if (savedUser) {
-  enterStore(savedUser);
-} else if (supabaseClient) {
-  supabaseClient.auth.getSession().then(({ data: { session } }) => {
-    if (session?.user) enterStore(session.user);
-  }).catch(() => {});
-}
 
 // ─── Cart State ─────────────────────────────────────────────────────────────
 let cart = [];
@@ -852,6 +842,10 @@ async function loadGroupBuys() {
   if (totalEl) totalEl.textContent = totalMembers || '—';
 }
 
+// Show the available circles before sign-in; authentication is required only
+// when someone clicks Join.
+loadGroupBuys();
+
 groupbuysGrid?.addEventListener('click', async event => {
   const btn = event.target.closest('.groupbuy-join');
   if (!btn || !currentUser) return;
@@ -978,3 +972,15 @@ document.querySelector('#watchStory')?.addEventListener('click', () =>
 
 // Initial check
 checkBackendHealth();
+
+// Restore a prior session only after all UI state and render functions have
+// been initialized. Calling enterStore earlier aborts the script due to the
+// temporal-dead-zone rules for later `let` and `const` declarations.
+const savedUser = getSavedSession();
+if (savedUser) {
+  enterStore(savedUser);
+} else if (supabaseClient) {
+  supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user) enterStore(session.user);
+  }).catch(() => {});
+}
