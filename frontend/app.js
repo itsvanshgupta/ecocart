@@ -6,7 +6,7 @@
 const IS_LOCAL_HOST = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 const API_BASE_URL = IS_LOCAL_HOST
   ? 'http://localhost:8000'
-  : 'https://ecocart-backend.onrender.com';
+  : 'https://ecocart-backend-1h0l.onrender.com';
 
 // ─── Supabase client ────────────────────────────────────────────────────────
 // Replace with your real Supabase project URL and anon public key from supabase.com
