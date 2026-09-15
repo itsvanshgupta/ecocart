@@ -1,8 +1,12 @@
 // ─── EcoCart Frontend Client ────────────────────────────────────────────────
 // Connects to Supabase (when configured) with intelligent offline/local fallback.
-// Connects to FastAPI backend at http://localhost:8000 for Gemini AI features.
+// Connects to the FastAPI backend for Gemini AI features — localhost when
+// developing, the deployed Render URL everywhere else.
 
-const API_BASE_URL = 'http://localhost:8000';
+const IS_LOCAL_HOST = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_BASE_URL = IS_LOCAL_HOST
+  ? 'http://localhost:8000'
+  : 'https://ecocart-backend.onrender.com';
 
 // ─── Supabase client ────────────────────────────────────────────────────────
 // Replace with your real Supabase project URL and anon public key from supabase.com
@@ -102,7 +106,7 @@ async function checkBackendHealth() {
   } catch (err) {
     badge.className = 'backend-status-badge offline';
     badge.querySelector('.status-text').textContent = 'AI Offline';
-    badge.title = 'FastAPI backend not detected at localhost:8000. Start backend to enable live AI features.';
+    badge.title = `FastAPI backend not detected at ${API_BASE_URL}. Start/wake the backend to enable live AI features.`;
   }
 }
 

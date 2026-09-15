@@ -100,6 +100,24 @@ Now open your browser and go to:
 
 ---
 
+## ☁️ Deployment (100% free tier)
+
+**Backend → Render**
+1. Push this repo to GitHub.
+2. On [render.com](https://render.com) → **New +** → **Blueprint** → connect the repo. Render reads `render.yaml` at the repo root and pre-fills a free web service rooted at `backend/`.
+3. When prompted, fill in the env vars: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLOWED_ORIGINS` (add your Vercel URL here once you have it, comma-separated with `http://localhost:5500` for local dev).
+4. Deploy. Note the resulting URL, e.g. `https://ecocart-backend.onrender.com`.
+   - Free plan spins down after 15 minutes of inactivity — the first request after idle takes 30–60s to wake up.
+
+**Frontend → Vercel**
+1. On [vercel.com](https://vercel.com) → **Add New Project** → import the same repo.
+2. Set **Root Directory** to `frontend`. Framework preset: **Other** (static site — no build step needed).
+3. Deploy. Note the resulting URL, e.g. `https://ecocart.vercel.app`.
+4. `frontend/app.js` auto-detects `localhost` vs. production and points at the Render backend URL hardcoded near the top of the file — update that URL if your Render service name differs from `ecocart-backend`.
+5. Go back to Render → your service → **Environment** → set `ALLOWED_ORIGINS` to include the Vercel URL, then redeploy so CORS allows it.
+
+---
+
 ## 🌟 Key Features
 
 1. **AI Eco-Grading Engine**:
