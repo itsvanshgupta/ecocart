@@ -125,14 +125,14 @@ Origin Country: {origin_country or 'Not specified'}
 Certifications: {certification or 'None specified'}
 """
         response = _gemini_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash-lite",
             contents=f"{GRADING_SYSTEM_PROMPT}\n\n{user_prompt}",
             config={"response_mime_type": "application/json"},
         )
         
         raw_text = response.text.strip()
         data = json.loads(raw_text)
-        data["engine"] = "gemini_3.6_flash"
+        data["engine"] = "gemini_3.5_flash_lite"
         return data
     except Exception as e:
         logger.error(f"Gemini API grading error: {e}. Falling back to rule engine.")
@@ -182,7 +182,7 @@ def chat_eco_advisor(message: str, history: Optional[List[Dict[str, str]]] = Non
         prompt_parts.append(f"User: {message}")
         
         response = _gemini_client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash-lite",
             contents="\n\n".join(prompt_parts),
         )
         return response.text.strip()

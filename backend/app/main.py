@@ -58,7 +58,7 @@ def health():
     return {
         "status": "healthy",
         "gemini_configured": bool(GEMINI_API_KEY),
-        "engine": "gemini_3.6_flash" if GEMINI_API_KEY else "heuristic_fallback",
+        "engine": "gemini_3.5_flash_lite" if GEMINI_API_KEY else "heuristic_fallback",
         "allowed_origins": ALLOWED_ORIGINS
     }
 
