@@ -38,7 +38,10 @@ EcoCart/
 |---|---|---|
 | **Frontend** | HTML5, CSS3, Vanilla JS | High-performance, lightweight UI |
 | **Backend** | Python, FastAPI, Uvicorn | Async REST API & AI microservice |
-| **AI / GenAI** | Google Gemini 1.5 Flash | 5-dimension product eco-scoring & EcoAdvisor |
+| **AI / GenAI** | Google Gemini Flash-Lite, with optional Groq (Llama 3.3) failover | 5-dimension product eco-scoring & EcoAdvisor |
+| **Embeddings** | Gemini `gemini-embedding-001` (768-d, computed once per product) | Semantic product vectors stored in `pgvector` |
+| **Hosting** | Vercel (frontend) + Render (backend) | Free tiers, no credit card |
+| **Keep-alive** | GitHub Actions cron | Stops Render sleeping and Supabase pausing |
 | **Database & Auth** | Supabase (PostgreSQL + RLS) | User authentication, carbon logs, catalog |
 | **Vector Search** | Supabase `pgvector` | Semantic similarity & greener product swaps |
 | **Real-time** | Supabase Realtime | Live group-buy membership updates |
@@ -105,7 +108,7 @@ Now open your browser and go to:
 **Backend → Render**
 1. Push this repo to GitHub.
 2. On [render.com](https://render.com) → **New +** → **Blueprint** → connect the repo. Render reads `render.yaml` at the repo root and pre-fills a free web service rooted at `backend/`.
-3. When prompted, fill in the env vars: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `ALLOWED_ORIGINS` (add your Vercel URL here once you have it, comma-separated with `http://localhost:5500` for local dev).
+3. When prompted, fill in the env vars: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. `ALLOWED_ORIGINS` is already set in `render.yaml`. Optionally add `GROQ_API_KEY` (free, no card, [console.groq.com](https://console.groq.com)) in the Render dashboard so chat keeps working after Gemini's daily free quota runs out.
 4. Deploy. Note the resulting URL, e.g. `https://ecocart-backend.onrender.com`.
    - Free plan spins down after 15 minutes of inactivity — the first request after idle takes 30–60s to wake up.
 
@@ -114,7 +117,12 @@ Now open your browser and go to:
 2. Set **Root Directory** to `frontend`. Framework preset: **Other** (static site — no build step needed).
 3. Deploy. Note the resulting URL, e.g. `https://ecocart.vercel.app`.
 4. `frontend/app.js` auto-detects `localhost` vs. production and points at the Render backend URL hardcoded near the top of the file — update that URL if your Render service name differs from `ecocart-backend`.
-5. Go back to Render → your service → **Environment** → set `ALLOWED_ORIGINS` to include the Vercel URL, then redeploy so CORS allows it.
+5. If your Vercel URL differs from the one in `render.yaml`, update `ALLOWED_ORIGINS` there (or in Render → **Environment**) so CORS allows it.
+
+**Staying free forever**
+- `.github/workflows/keep-alive.yml` pings the backend and `/health/db` every 10 minutes: Render never sleeps and Supabase never pauses. GitHub disables scheduled workflows after 60 days without repo activity — re-enable them in the Actions tab if that happens.
+- Recommendations read the embedding already stored in Postgres, so they use no LLM quota. Chat answers are cached for an hour and limited to 20 questions per IP per 10 minutes to protect the free quota.
+- One Render free service running 24/7 uses ~744 of the 750 free monthly instance hours; don't run a second always-on free service in the same workspace.
 
 ---
 

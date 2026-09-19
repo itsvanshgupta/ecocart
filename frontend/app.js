@@ -1000,7 +1000,7 @@ ecochatForm?.addEventListener('submit', async (e) => {
       appendChatMessage('ai', data.reply);
       chatHistory.push({ role: 'assistant', content: data.reply });
     } else {
-      appendChatMessage('ai', 'I am currently having trouble reaching my AI engine. Please check that FastAPI backend is running on port 8000.');
+      appendChatMessage('ai', data.detail || 'I am currently having trouble reaching my AI engine. Please try again in a moment.');
     }
   } catch (err) {
     loadingDiv.remove();

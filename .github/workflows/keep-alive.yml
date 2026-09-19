@@ -1,0 +1,21 @@
+name: Keep free services awake
+
+# Render's free web service sleeps after 15 idle minutes and Supabase's free
+# project pauses after a week without activity. Pinging both keeps EcoCart
+# instantly available at zero cost (Actions minutes are free for public repos).
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake backend
+        run: curl -fsS --retry 3 --retry-delay 20 -m 90 https://ecocart-backend-1h0l.onrender.com/health
+
+      - name: Touch database
+        run: |
+          curl -fsS --retry 2 --retry-delay 10 -m 60 https://ecocart-backend-1h0l.onrender.com/health/db \
+            || echo "::warning::Database unreachable - check that the Supabase project is not paused"
