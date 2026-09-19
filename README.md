@@ -1,154 +1,209 @@
 # 🌿 EcoCart — AI-Powered Sustainable E-Commerce Platform
 
-> **Conscious Commerce Driven by Intelligent AI Eco-Grading & Community Buying**
+> **Conscious commerce driven by explainable AI eco-grading, semantic (RAG) product swaps, and community group buying.**
 
-EcoCart is a full-stack sustainable commerce platform that empowers consumers to make informed, lower-carbon choices. Every product receives an explainable **A–F Eco-Grade** across 5 dimensions using **Gemini AI**, tracks real-world CO₂ savings in a personal living impact dashboard, surfaces greener swaps, and unlocks collective discounts through community group buying.
+**Live demo:** [ecocart-delta.vercel.app](https://ecocart-delta.vercel.app) &nbsp;·&nbsp; **API docs:** `/docs` on the deployed backend &nbsp;·&nbsp; **Cost to run: $0**
 
----
-
-## 🏗 Project Architecture
-
-```
-EcoCart/
-├── frontend/                 # Client Web Application
-│   ├── index.html            # Marketplace UI, Impact Dashboard, Group Buys & AI EcoAdvisor
-│   ├── styles.css            # Responsive design system & animations
-│   └── app.js                # Supabase Auth/DB Client + FastAPI AI Client
-├── backend/                  # Python FastAPI Intelligence Backend
-│   ├── app/
-│   │   ├── main.py           # REST API routes & CORS middleware
-│   │   ├── config.py         # Environment configuration
-│   │   └── services/
-│   │       └── gemini_service.py # Gemini AI grading, RAG advisor & fallback engine
-│   ├── requirements.txt      # Backend Python dependencies
-│   └── .env.example          # Environment variables template
-├── supabase/                 # Database Schema & Migrations
-│   ├── schema.sql            # Core tables & Row Level Security (RLS) policies
-│   ├── impact_upgrade.sql    # Product metadata & explainable grading fields
-│   ├── seed_group_buys.sql   # Initial collective buying circles
-│   └── backfill_profiles.sql # Profile trigger sync script
-└── README.md
-```
+EcoCart helps shoppers make lower-carbon choices. Every product carries an explainable **A–F eco-grade** across five dimensions (materials, packaging, carbon, ethics, durability). A **RAG pipeline on Supabase `pgvector`** surfaces greener like-for-like alternatives, a personal **impact dashboard** turns purchases into real-world CO₂ equivalents, and **group buying** unlocks collective discounts with live progress.
 
 ---
 
-## ⚡ Tech Stack (100% Free Tier)
+## Architecture
+
+```mermaid
+flowchart LR
+    U[Browser] -->|static site| V[Vercel<br/>HTML · CSS · JS]
+    V -->|auth · catalog · carbon log<br/>group buys · realtime| S[(Supabase<br/>Postgres · Auth · Realtime · pgvector)]
+    V -->|EcoChat · recommendations| L[AWS Lambda<br/>FastAPI + Mangum<br/>Function URL]
+    L -->|pgvector similarity search| S
+    L -->|LLM + embeddings| G[Gemini API]
+    L -.->|failover| Q[Groq API]
+    GH[GitHub Actions] -->|OIDC role, no stored keys| L
+    GH -->|push to main| V
+```
+
+**Request path for a greener swap (RAG):** the browser opens a product → FastAPI reads that product's **stored 768-d embedding** from Postgres → `match_products_in_group()` runs a cosine-similarity search inside the product's curated comparison group → results are filtered to *strictly higher* eco-grades. No LLM call is made at request time, so recommendations cost nothing and never hit a quota.
+
+**Resilience:** chat tries Gemini, then Groq (optional), then a built-in rule engine, so the assistant always answers. Repeated questions are served from an in-memory cache, and chat is rate-limited per IP to protect free-tier quotas.
+
+---
+
+## Tech stack (100% free tier)
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Frontend** | HTML5, CSS3, Vanilla JS | High-performance, lightweight UI |
-| **Backend** | Python, FastAPI, Uvicorn | Async REST API & AI microservice |
-| **AI / GenAI** | Google Gemini Flash-Lite, with optional Groq (Llama 3.3) failover | 5-dimension product eco-scoring & EcoAdvisor |
-| **Embeddings** | Gemini `gemini-embedding-001` (768-d, computed once per product) | Semantic product vectors stored in `pgvector` |
-| **Hosting** | Vercel (frontend) + Render (backend) | Free tiers, no credit card |
-| **Keep-alive** | GitHub Actions cron | Stops Render sleeping and Supabase pausing |
-| **Database & Auth** | Supabase (PostgreSQL + RLS) | User authentication, carbon logs, catalog |
-| **Vector Search** | Supabase `pgvector` | Semantic similarity & greener product swaps |
-| **Real-time** | Supabase Realtime | Live group-buy membership updates |
+| **Frontend** | HTML5, CSS3, vanilla JavaScript | Store, cart, impact dashboard, group buys, EcoChat |
+| **Backend** | Python 3.12, FastAPI, Mangum | Async REST API, packaged for AWS Lambda |
+| **Compute** | AWS Lambda + Function URL | Serverless backend, scales to zero (Always Free tier) |
+| **AI / GenAI** | Gemini Flash-Lite, optional Groq (Llama 3.3) failover | EcoAdvisor chat and product grading |
+| **Embeddings** | `gemini-embedding-001` (768-d) | Computed once per product, stored in Postgres |
+| **Database & Auth** | Supabase (Postgres, Row Level Security, Auth) | Users, catalog, carbon log, group buys |
+| **Vector search** | Supabase `pgvector` | Semantic similarity for greener swaps |
+| **Real-time** | Supabase Realtime | Live group-buy membership |
+| **IaC** | AWS SAM / CloudFormation | Reproducible Lambda deployment |
+| **CI/CD** | GitHub Actions + OIDC | Test → lint → build → deploy → smoke-test |
+| **Frontend hosting** | Vercel | Auto-deploys from `main` |
 
 ---
 
-## 🚀 How to Run Locally
+## Project structure
 
-### Prerequisites
-- **Python 3.10+**
-- A modern web browser
-- *(Optional)* Free Gemini API key from [Google AI Studio](https://aistudio.google.com)
+```
+ecocart/
+├── frontend/                   # Static client (deployed to Vercel)
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js                  # Supabase client + FastAPI client
+├── backend/                    # FastAPI service
+│   ├── app/
+│   │   ├── main.py             # Routes, CORS, chat cache + rate limiting
+│   │   ├── config.py
+│   │   └── services/
+│   │       ├── gemini_service.py   # Gemini -> Groq -> rule-engine failover, embeddings
+│   │       └── vector_service.py   # pgvector RAG over stored embeddings
+│   ├── lambda_handler.py       # AWS Lambda entrypoint (Mangum)
+│   ├── scripts/                # embed_catalog.py, verify_rag.py, smoke_lambda_package.py
+│   ├── tests/                  # 38 offline pytest tests
+│   ├── requirements.txt
+│   └── requirements-dev.txt
+├── tests/frontend/             # jsdom tests for the client (auth, sessions)
+├── supabase/                   # SQL: schema, RLS, pgvector, seed data
+├── template.yaml               # AWS SAM template (Lambda + Function URL + log group)
+├── infra/
+│   └── github-oidc-bootstrap.yaml   # One-time: GitHub OIDC role + artifact bucket + spend alarm
+├── .github/workflows/
+│   ├── ci-cd.yml               # Test, lint, build, deploy, smoke-test
+│   └── keep-alive.yml          # Keeps free tiers awake
+└── render.yaml                 # Optional alternative backend host (Render free tier)
+```
 
 ---
 
-### Step 1: Start the Backend (FastAPI)
+## Run locally
 
-Open a terminal in the `backend/` folder:
+**Prerequisites:** Python 3.12+, a browser. A free [Gemini API key](https://aistudio.google.com) is optional (without it the app uses its rule engine).
 
 ```powershell
+# Backend
 cd backend
-
-# Create & activate virtual environment (Windows)
 python -m venv venv
 .\venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install -r requirements.txt
-
-# (Optional) Set your Gemini API key in .env
-# Copy .env.example to .env and add GEMINI_API_KEY=AIzaSy...
-
-# Start the server
+pip install -r requirements-dev.txt
+copy .env.example .env        # then fill in your keys
 uvicorn app.main:app --reload --port 8000
 ```
 
-The backend is now live at:
-- **API URL:** `http://localhost:8000`
-- **Interactive Swagger Docs:** `http://localhost:8000/docs`
-- **Health Check:** `http://localhost:8000/health`
-
----
-
-### Step 2: Start the Frontend
-
-Open a second terminal in the `frontend/` folder:
+API at `http://localhost:8000` (Swagger UI at `/docs`, health at `/health`, database check at `/health/db`).
 
 ```powershell
+# Frontend (second terminal)
 cd frontend
-
-# Run a lightweight local HTTP server with Python
 python -m http.server 5500
 ```
 
-Now open your browser and go to:
-👉 **`http://localhost:5500`**
+Open `http://localhost:5500`. The client automatically targets `localhost:8000` when served from localhost.
 
-*(Or right-click `frontend/index.html` in VS Code and choose **"Open with Live Server"**)*
+**Embed the catalog** (once, after creating the Supabase project and running the SQL in `supabase/`):
 
----
-
-## ☁️ Deployment (100% free tier)
-
-**Backend → Render**
-1. Push this repo to GitHub.
-2. On [render.com](https://render.com) → **New +** → **Blueprint** → connect the repo. Render reads `render.yaml` at the repo root and pre-fills a free web service rooted at `backend/`.
-3. When prompted, fill in the env vars: `GEMINI_API_KEY`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`. `ALLOWED_ORIGINS` is already set in `render.yaml`. Optionally add `GROQ_API_KEY` (free, no card, [console.groq.com](https://console.groq.com)) in the Render dashboard so chat keeps working after Gemini's daily free quota runs out.
-4. Deploy. Note the resulting URL, e.g. `https://ecocart-backend.onrender.com`.
-   - Free plan spins down after 15 minutes of inactivity — the first request after idle takes 30–60s to wake up.
-
-**Frontend → Vercel**
-1. On [vercel.com](https://vercel.com) → **Add New Project** → import the same repo.
-2. Set **Root Directory** to `frontend`. Framework preset: **Other** (static site — no build step needed).
-3. Deploy. Note the resulting URL, e.g. `https://ecocart.vercel.app`.
-4. `frontend/app.js` auto-detects `localhost` vs. production and points at the Render backend URL hardcoded near the top of the file — update that URL if your Render service name differs from `ecocart-backend`.
-5. If your Vercel URL differs from the one in `render.yaml`, update `ALLOWED_ORIGINS` there (or in Render → **Environment**) so CORS allows it.
-
-**Staying free forever**
-- `.github/workflows/keep-alive.yml` pings the backend and `/health/db` every 10 minutes: Render never sleeps and Supabase never pauses. GitHub disables scheduled workflows after 60 days without repo activity — re-enable them in the Actions tab if that happens.
-- Recommendations read the embedding already stored in Postgres, so they use no LLM quota. Chat answers are cached for an hour and limited to 20 questions per IP per 10 minutes to protect the free quota.
-- One Render free service running 24/7 uses ~744 of the 750 free monthly instance hours; don't run a second always-on free service in the same workspace.
+```powershell
+cd backend
+python scripts\embed_catalog.py
+python scripts\verify_rag.py     # every lower-grade product should list a greener match
+```
 
 ---
 
-## 🌟 Key Features
+## Testing
 
-1. **AI Eco-Grading Engine**:
-   - Scores materials, packaging recyclability, lifecycle emissions, ethical labor, and product durability.
-   - Outputs composite letter grades (A–F) and score out of 100 with clear explainability.
+```powershell
+cd backend
+python -m pytest -q
+```
 
-2. **Interactive AI EcoAdvisor Widget**:
-   - Floating chat assistant providing instant guidance on material sustainability, recycling codes (e.g. PAP 22, HDPE 2), and carbon-saving swaps.
+Frontend auth tests (Node 24+): `cd tests/frontend && npm ci && npm test`.
 
-3. **Personal Impact Dashboard & Gamification**:
-   - Computes personal **EcoScore** based on purchase history.
-   - Calculates real-world equivalents (e.g., *“Equivalent to charging 145 smartphones”*).
-   - Unlocks impact badges (*Carbon Champion*, *Plastic-Free Pick*, *First Purchase*).
-
-4. **Collective Group Buying (Buying Circles)**:
-   - Community-driven group purchases with live progress bars and discount thresholds.
-
-5. **Packaging Choice Selector**:
-   - Dynamic checkout packaging options with per-choice CO₂ calculation saved directly to the user's `carbon_log`.
+38 backend tests run fully offline (no API keys, no network). They cover heuristic grading, the Gemini → Groq → rule-engine failover, the chat cache and rate limiter, CORS, pgvector recommendation logic, and the **AWS Lambda handler invoked with a real Function URL event**.
 
 ---
 
-## 🔒 Security & Best Practices
-- **Row Level Security (RLS)**: Enforced in PostgreSQL via Supabase policies ensuring users can only read and write their own data.
-- **Graceful Fallbacks**: Intelligent heuristic rules allow the app to function even during offline network conditions or before API key setup.
+## CI/CD pipeline
 
+`.github/workflows/ci-cd.yml` runs on every push and pull request:
+
+| Stage | What it does |
+|---|---|
+| **Backend tests** | `pytest` on Python 3.12 |
+| **Frontend checks** | `node --check`, plus 21 jsdom tests of login, signup, session restore and demo mode |
+| **Infrastructure lint** | `cfn-lint` on `template.yaml` and the bootstrap template |
+| **Build** | `sam build` packages the Lambda (Linux, Python 3.12) |
+| **Package smoke test** | Imports the *built* package and invokes it with a Function URL event, before deploying |
+| **Deploy** | `sam deploy` to AWS Lambda (only on `main`) using short-lived **OIDC credentials**, no access keys stored in GitHub |
+| **Live smoke test** | Calls the deployed `/health`, verifies the CORS preflight for the Vercel origin, and checks `/health/db` |
+
+The deploy job is skipped automatically until the AWS variables below are configured. The frontend is deployed by Vercel's Git integration on every push to `main`.
+
+---
+
+## AWS deployment (one-time setup, about 10 minutes)
+
+The backend runs on **AWS Lambda behind a Function URL**. Lambda's Always Free tier (1M requests and 400,000 GB-seconds every month, permanently) covers this project, and the deploy role is scoped to this one stack.
+
+**1. Create the bootstrap stack**
+1. Sign in to the AWS console and select the region **Asia Pacific (Mumbai) `ap-south-1`** (or any region, but keep it consistent).
+2. **CloudFormation → Create stack → With new resources → Upload a template file** and choose `infra/github-oidc-bootstrap.yaml`.
+3. Stack name: `ecocart-bootstrap`. Leave the defaults. Put your email in **AlertEmail** to get a warning if the account is ever billed more than $0.10. If the stack fails because the GitHub OIDC provider already exists in your account, delete it and recreate it with **CreateOidcProvider = false**.
+4. On the last page tick *"I acknowledge that AWS CloudFormation might create IAM resources with custom names"* and submit. Wait for `CREATE_COMPLETE`, then open the **Outputs** tab.
+
+**2. Configure GitHub** (repository → Settings → Secrets and variables → Actions)
+
+| Type | Name | Value |
+|---|---|---|
+| Variable | `AWS_ROLE_ARN` | `DeployRoleArn` output |
+| Variable | `AWS_ARTIFACT_BUCKET` | `ArtifactsBucketName` output |
+| Variable | `AWS_REGION` | `Region` output (e.g. `ap-south-1`) |
+| Variable | `SUPABASE_URL` | Your Supabase project URL |
+| Secret | `SUPABASE_SERVICE_ROLE_KEY` | Supabase secret (service role) key |
+| Secret | `GEMINI_API_KEY` | Google AI Studio key |
+| Secret *(optional)* | `GROQ_API_KEY` | Free key from console.groq.com |
+
+**3. Deploy:** GitHub → Actions → **CI/CD** → **Run workflow** (or push to `main`). When it finishes, the run summary shows the live API URL.
+
+**4. Point the frontend at it:** set `API_BASE_URL` in `frontend/app.js` to the Function URL, set the repository variable `BACKEND_URL` to the same URL (so the keep-alive job keeps Supabase awake), and push.
+
+---
+
+## Staying free forever
+
+- **No idle costs:** Lambda bills only per request and sits inside the Always Free allowance. There is no server to keep awake.
+- **Supabase never pauses:** the keep-alive workflow calls `/health/db` on a schedule. GitHub disables scheduled workflows after 60 days without repository activity, so re-enable it in the Actions tab if that ever happens.
+- **AI quotas are protected:** recommendations read embeddings already stored in Postgres (zero LLM calls). Chat answers are cached for an hour and limited to 20 questions per IP per 10 minutes, with Groq as an automatic second provider.
+- **Guardrail:** the optional spend alarm emails you if the AWS account is ever billed more than $0.10.
+- **Account plan:** AWS requires a payment card at sign-up. Newer accounts start on a time-limited Free plan, so check your plan in the Billing console; moving to the standard plan costs nothing by itself and Always Free usage stays at $0.
+- **Lambda scaling note:** the in-memory cache and rate limiter are per Lambda instance, so they are best-effort under heavy concurrency.
+
+<details>
+<summary>Alternative host: Render (free tier)</summary>
+
+`render.yaml` deploys the same FastAPI app to a free Render web service (`rootDir: backend`, `uvicorn app.main:app --host 0.0.0.0 --port $PORT`). Set `GEMINI_API_KEY`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in the dashboard. Render's free tier sleeps after 15 idle minutes; the keep-alive workflow pings it every 10 minutes to avoid cold starts.
+</details>
+
+---
+
+## Key features
+
+1. **Explainable AI eco-grading** — A–F grades across materials, packaging, carbon, ethics and durability, each with a plain-language explanation. Available live at `POST /api/ai/grade`, with a rule-based fallback.
+2. **RAG greener swaps** — semantic similarity search over `pgvector` embeddings, restricted to comparable products and strictly better grades.
+3. **EcoAdvisor chat** — a sustainability assistant with a Gemini → Groq → rule-engine failover.
+4. **Personal impact dashboard** — EcoScore, real-world CO₂ equivalents and badges computed from purchase history.
+5. **Group buying** — collective discounts with live progress via Supabase Realtime.
+6. **Packaging choice at checkout** — per-choice CO₂ impact saved to the user's carbon log.
+7. **Real accounts** — Supabase email/password auth with Row Level Security; users can only read and write their own data.
+
+---
+
+## Security
+
+- **Row Level Security** on user-owned tables. Verified end to end for the carbon log: a signed-in user can insert their own rows but not another user's.
+- **Secrets** live only in GitHub Actions secrets and Lambda environment variables. `.env` files are git-ignored, and a scan of the repository history found no secret keys.
+- **Keyless deployment:** GitHub authenticates to AWS with OIDC. The deploy role can be assumed only by this repository's `main` branch and can manage only the `ecocart-backend` stack.
+- **CORS** is restricted to the deployed frontend and localhost.

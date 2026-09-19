@@ -1,0 +1,184 @@
+name: CI/CD
+
+# Test -> lint -> build -> deploy to AWS Lambda -> smoke-test.
+# The frontend is deployed separately: Vercel builds every push to main from its Git integration.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend-tests:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+
+      - name: Run pytest
+        working-directory: backend
+        run: python -m pytest -q
+
+  frontend-checks:
+    name: Frontend checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tests/frontend/package-lock.json
+
+      - name: Syntax-check the client script
+        run: node --check frontend/app.js
+
+      - name: Ensure the page loads the client script
+        run: grep -q 'src="app.js"' frontend/index.html
+
+      - name: Install frontend test dependencies
+        working-directory: tests/frontend
+        run: npm ci
+
+      - name: Run auth and session tests (jsdom)
+        working-directory: tests/frontend
+        run: npm test
+
+  infrastructure-lint:
+    name: Lint CloudFormation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install cfn-lint
+        run: pip install cfn-lint
+
+      - name: Lint SAM and bootstrap templates
+        run: cfn-lint template.yaml infra/github-oidc-bootstrap.yaml
+
+  deploy:
+    name: Deploy to AWS Lambda
+    needs: [backend-tests, frontend-checks, infrastructure-lint]
+    # Skipped until the one-time AWS bootstrap has set the AWS_ROLE_ARN repository variable.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AWS_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    concurrency:
+      group: deploy-backend
+      cancel-in-progress: false
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install AWS SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Assume AWS role via GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build Lambda package
+        run: sam build --template-file template.yaml
+
+      - name: Smoke-test the built package before deploying
+        working-directory: .aws-sam/build/ApiFunction
+        run: python scripts/smoke_lambda_package.py
+
+      - name: Deploy stack
+        env:
+          ARTIFACT_BUCKET: ${{ vars.AWS_ARTIFACT_BUCKET }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          if [ -z "$ARTIFACT_BUCKET" ]; then
+            echo "::error::Repository variable AWS_ARTIFACT_BUCKET is not set (see README, AWS deployment)"
+            exit 1
+          fi
+
+          overrides=()
+          [ -n "$GEMINI_API_KEY" ] && overrides+=("GeminiApiKey=$GEMINI_API_KEY")
+          [ -n "$GROQ_API_KEY" ] && overrides+=("GroqApiKey=$GROQ_API_KEY")
+          [ -n "$SUPABASE_URL" ] && overrides+=("SupabaseUrl=$SUPABASE_URL")
+          [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] && overrides+=("SupabaseServiceRoleKey=$SUPABASE_SERVICE_ROLE_KEY")
+
+          args=(
+            --stack-name ecocart-backend
+            --s3-bucket "$ARTIFACT_BUCKET"
+            --region "$AWS_REGION"
+            --capabilities CAPABILITY_IAM
+            --no-confirm-changeset
+            --no-fail-on-empty-changeset
+          )
+          if [ "${#overrides[@]}" -gt 0 ]; then
+            args+=(--parameter-overrides "${overrides[@]}")
+          fi
+
+          sam deploy "${args[@]}"
+
+      - name: Look up the API URL
+        id: api
+        run: |
+          url=$(aws cloudformation describe-stacks \
+            --stack-name ecocart-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          echo "url=${url%/}" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test the live API
+        env:
+          API_URL: ${{ steps.api.outputs.url }}
+        run: |
+          echo "Testing $API_URL"
+          curl -fsS --retry 5 --retry-delay 5 --retry-all-errors -m 30 "$API_URL/health" | grep -q '"status":"healthy"'
+
+          curl -fsS -m 30 -o /dev/null -D - -X OPTIONS "$API_URL/api/ai/chat" \
+            -H "Origin: https://ecocart-delta.vercel.app" \
+            -H "Access-Control-Request-Method: POST" \
+            | grep -qi "access-control-allow-origin: https://ecocart-delta.vercel.app"
+
+          curl -fsS -m 60 "$API_URL/health/db" >/dev/null \
+            || echo "::warning::/health/db failed - check the Supabase project and the SUPABASE_* settings"
+
+      - name: Publish the API URL
+        env:
+          API_URL: ${{ steps.api.outputs.url }}
+        run: |
+          {
+            echo "### Deployed to AWS Lambda"
+            echo ""
+            echo "- API: $API_URL"
+            echo "- Docs: $API_URL/docs"
+            echo "- Region: $AWS_REGION"
+          } >> "$GITHUB_STEP_SUMMARY"

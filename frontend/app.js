@@ -147,9 +147,13 @@ function updateProfile(user) {
     .split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
+function isDemoUser(user) {
+  return String(user?.id || '').startsWith('demo-');
+}
+
 function enterStore(user) {
   currentUser = user;
-  saveSession(user);
+  if (isDemoUser(user)) saveSession(user);
   updateProfile(user);
   authScreen.classList.add('is-hidden');
   loadProductCatalog();
@@ -204,85 +208,74 @@ registerForm.addEventListener('submit', async event => {
 
   setLoading(registerForm, 'Creating your account…', true);
 
-  const localUser = {
-    id: 'usr_' + Date.now(),
-    email: email,
-    user_metadata: { full_name: name, phone: phone }
-  };
-
-  // Try Supabase Auth if client exists
-  if (supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient.auth.signUp({
-        email, password,
-        options: { emailRedirectTo: window.location.origin, data: { full_name: name, phone } }
-      });
-      if (!error && data?.user) {
-        setLoading(registerForm, '', false);
-        document.querySelector('#authTitle').innerHTML = 'Account<br /><em>Created!</em>';
-        document.querySelector('#authSubtitle').textContent = `Welcome to the movement, ${name}.`;
-        enterStore(data.user);
-        return;
-      }
-    } catch (err) {
-      console.warn('Supabase cloud sign-up notice (using local active session):', err.message);
-    }
+  if (!supabaseClient) {
+    setLoading(registerForm, '', false);
+    return showFeedback('The account service is unavailable right now. Please try again shortly, or explore with the demo.');
   }
 
-  // Seamless fallback: Log in directly
-  setTimeout(() => {
+  try {
+    const { data, error } = await supabaseClient.auth.signUp({
+      email, password,
+      options: { emailRedirectTo: window.location.origin, data: { full_name: name, phone } }
+    });
     setLoading(registerForm, '', false);
-    enterStore(localUser);
-    showToast(`Welcome to EcoCart, ${name}!`);
-  }, 400);
+
+    if (error) return showFeedback(error.message || 'Could not create your account. Please try again.');
+
+    // Supabase returns a user with no identities when the email is already registered.
+    if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+      return showFeedback('An account with this email already exists. Please sign in instead.');
+    }
+
+    if (data?.session && data.user) {
+      enterStore(data.user);
+      showToast(`Welcome to EcoCart, ${name}!`);
+      return;
+    }
+
+    // Email confirmation is enabled in Supabase: no session until the link is clicked.
+    setAuthMode('login');
+    showFeedback('Account created! Check your email to confirm your address, then sign in.', true);
+  } catch (err) {
+    setLoading(registerForm, '', false);
+    showFeedback('Could not reach the account service. Please check your connection and try again.');
+  }
 });
 
 // Login Form Submit
 loginForm.addEventListener('submit', async event => {
   event.preventDefault();
-  const identifier = document.querySelector('#loginIdentifier').value.trim();
-  const password   = document.querySelector('#loginPassword').value;
-  const isEmail    = identifier.includes('@');
+  const email    = document.querySelector('#loginIdentifier').value.trim().toLowerCase();
+  const password = document.querySelector('#loginPassword').value;
 
-  if (isEmail && !validEmail(identifier)) return showFeedback('Please enter a valid email address.');
-  if (!isEmail && !validPhone(identifier)) return showFeedback('Please enter a valid 10 to 15 digit phone number.');
+  if (!validEmail(email))  return showFeedback('Please enter a valid email address.');
   if (password.length < 6) return showFeedback('Password must be at least 6 characters long.');
 
   setLoading(loginForm, 'Signing you in…', true);
 
-  const userName = isEmail ? identifier.split('@')[0].replace(/[._-]/g, ' ') : 'EcoCart User';
-  const localUser = {
-    id: 'usr_' + identifier.replace(/[^a-zA-Z0-9]/g, ''),
-    email: isEmail ? identifier.toLowerCase() : 'user@ecocart.dev',
-    user_metadata: {
-      full_name: userName.charAt(0).toUpperCase() + userName.slice(1),
-      phone: isEmail ? '+91 98765 43210' : identifier
-    }
-  };
-
-  // Try Supabase Auth if client exists
-  if (supabaseClient) {
-    try {
-      const { data, error } = await supabaseClient.auth.signInWithPassword({
-        email: isEmail ? identifier.toLowerCase() : identifier,
-        password
-      });
-      if (!error && data?.user) {
-        setLoading(loginForm, '', false);
-        enterStore(data.user);
-        return;
-      }
-    } catch (err) {
-      console.warn('Supabase cloud login notice (using local active session):', err.message);
-    }
+  if (!supabaseClient) {
+    setLoading(loginForm, '', false);
+    return showFeedback('The account service is unavailable right now. Please try again shortly, or explore with the demo.');
   }
 
-  // Seamless fallback: Sign in directly
-  setTimeout(() => {
+  try {
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
     setLoading(loginForm, '', false);
-    enterStore(localUser);
-    showToast(`Welcome back, ${localUser.user_metadata.full_name}!`);
-  }, 400);
+
+    if (error || !data?.user) {
+      const unconfirmed = error && (error.code === 'email_not_confirmed' || /not confirmed/i.test(error.message || ''));
+      return showFeedback(unconfirmed
+        ? 'Please confirm your email address first — check your inbox for the link.'
+        : 'Incorrect email or password.');
+    }
+
+    enterStore(data.user);
+    const name = data.user.user_metadata?.full_name || email.split('@')[0];
+    showToast(`Welcome back, ${name}!`);
+  } catch (err) {
+    setLoading(loginForm, '', false);
+    showFeedback('Could not reach the account service. Please check your connection and try again.');
+  }
 });
 
 document.querySelector('#authSwitch').addEventListener('click', event => {
@@ -1043,11 +1036,16 @@ checkBackendHealth();
 // Restore a prior session only after all UI state and render functions have
 // been initialized. Calling enterStore earlier aborts the script due to the
 // temporal-dead-zone rules for later `let` and `const` declarations.
+// Only the local demo user is restored from localStorage; real users are
+// restored from their verified Supabase session.
 const savedUser = getSavedSession();
-if (savedUser) {
+if (savedUser && isDemoUser(savedUser)) {
   enterStore(savedUser);
-} else if (supabaseClient) {
-  supabaseClient.auth.getSession().then(({ data: { session } }) => {
-    if (session?.user) enterStore(session.user);
-  }).catch(() => {});
+} else {
+  if (savedUser) clearSession();
+  if (supabaseClient) {
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) enterStore(session.user);
+    }).catch(() => {});
+  }
 }

@@ -1,21 +1,29 @@
 name: Keep free services awake
 
 # Render's free web service sleeps after 15 idle minutes and Supabase's free
-# project pauses after a week without activity. Pinging both keeps EcoCart
-# instantly available at zero cost (Actions minutes are free for public repos).
+# project pauses after a week without activity. Pinging the backend (and, through
+# it, the database) keeps EcoCart instantly available at zero cost. Actions
+# minutes are free for public repositories.
+#
+# After moving to AWS Lambda, set the repository variable BACKEND_URL to the
+# Lambda Function URL so this keeps the Supabase project alive from there.
 on:
   schedule:
     - cron: "*/10 * * * *"
   workflow_dispatch:
 
+permissions: {}
+
 jobs:
   ping:
     runs-on: ubuntu-latest
+    env:
+      BACKEND_URL: ${{ vars.BACKEND_URL || 'https://ecocart-backend-1h0l.onrender.com' }}
     steps:
       - name: Wake backend
-        run: curl -fsS --retry 3 --retry-delay 20 -m 90 https://ecocart-backend-1h0l.onrender.com/health
+        run: curl -fsS --retry 3 --retry-delay 20 -m 90 "${BACKEND_URL%/}/health"
 
       - name: Touch database
         run: |
-          curl -fsS --retry 2 --retry-delay 10 -m 60 https://ecocart-backend-1h0l.onrender.com/health/db \
+          curl -fsS --retry 2 --retry-delay 10 -m 60 "${BACKEND_URL%/}/health/db" \
             || echo "::warning::Database unreachable - check that the Supabase project is not paused"

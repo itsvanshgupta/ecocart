@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: EcoCart backend - FastAPI on AWS Lambda behind a Function URL (fits the Always Free tier)
+
+Parameters:
+  GeminiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  GroqApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  SupabaseUrl:
+    Type: String
+    Default: ""
+  SupabaseServiceRoleKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+  AllowedOrigins:
+    Type: String
+    Default: https://ecocart-delta.vercel.app,http://localhost:5500,http://127.0.0.1:5500
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures:
+      - x86_64
+    Timeout: 30
+    MemorySize: 512
+
+Resources:
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/ecocart-api
+      RetentionInDays: 14
+
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: ecocart-api
+      Description: EcoCart FastAPI backend (Gemini grading, EcoChat, pgvector RAG)
+      CodeUri: backend/
+      Handler: lambda_handler.handler
+      LoggingConfig:
+        LogGroup: !Ref ApiLogGroup
+      Environment:
+        Variables:
+          GEMINI_API_KEY: !Ref GeminiApiKey
+          GROQ_API_KEY: !Ref GroqApiKey
+          SUPABASE_URL: !Ref SupabaseUrl
+          SUPABASE_SERVICE_ROLE_KEY: !Ref SupabaseServiceRoleKey
+          ALLOWED_ORIGINS: !Ref AllowedOrigins
+      FunctionUrlConfig:
+        AuthType: NONE
+
+Outputs:
+  ApiUrl:
+    Description: Public HTTPS endpoint of the EcoCart backend
+    Value: !GetAtt ApiFunctionUrl.FunctionUrl

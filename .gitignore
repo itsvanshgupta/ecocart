@@ -19,3 +19,7 @@ build/
 .idea/
 .DS_Store
 Thumbs.db
+
+# AWS SAM build output and test caches
+.aws-sam/
+.pytest_cache/
