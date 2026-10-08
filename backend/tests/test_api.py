@@ -34,6 +34,14 @@ def test_chat_falls_back_to_tips_without_keys():
     assert "Recycling Tip" in res.json()["reply"]
 
 
+def test_ai_requests_reject_empty_and_oversized_input():
+    assert client.post("/api/ai/chat", json={"message": ""}).status_code == 422
+    assert client.post("/api/ai/chat", json={"message": "x" * 2_001}).status_code == 422
+    assert client.post("/api/ai/grade", json={
+        "product_name": "Towel", "material": "cotton", "packaging": "x" * 501,
+    }).status_code == 422
+
+
 def test_chat_cache_answers_repeat_questions_once(monkeypatch):
     calls = []
     monkeypatch.setattr(main, "llm_providers", lambda: ["gemini"])

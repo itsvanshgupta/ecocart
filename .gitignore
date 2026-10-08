@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+frontend/config.js
 
 # Python virtual environments and bytecode
 venv/

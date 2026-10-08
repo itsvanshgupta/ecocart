@@ -35,9 +35,16 @@ async function boot({ auth, saved, noSupabase, url } = {}) {
   const w = dom.window;
   w.fetch = async () => ({ ok: true, json: async () => ({ gemini_configured: true, engine: 'test' }) });
   if (saved) w.localStorage.setItem('ecocart_auth_user', JSON.stringify(saved));
+  if (!noSupabase) {
+    w.ECOCART_CONFIG = {
+      supabaseUrl: 'https://test-project.supabase.co',
+      supabaseAnonKey: 'test-anon-key',
+    };
+  }
   const fullAuth = Object.assign({
     getSession: async () => ({ data: { session: null } }),
     signOut: async () => ({}),
+    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
   }, auth || {});
   if (!noSupabase) w.supabase = { createClient: () => makeClient(fullAuth) };
   w.eval(appJs + '\n;window.__api = API_BASE_URL;');
@@ -126,13 +133,10 @@ async function fillRegister(w) {
   w = await boot({ auth: { getSession: async () => ({ data: { session: { user: REAL_USER } } }) } });
   check('real Supabase session is restored on reload', inStore(w));
 
-  // 12. Demo mode works and persists
+  // 12. Real-only authentication has no demo bypass.
   w = await boot();
-  w.document.querySelector('#quickDemoBtn').click(); await tick();
-  check('quick demo enters the store', inStore(w));
-  check('demo user is persisted', /demo-user/.test(w.localStorage.getItem('ecocart_auth_user') || ''));
-  w = await boot({ saved: { id: 'demo-user-aarav-sharma', email: 'aarav.sharma@ecocart.dev', user_metadata: { full_name: 'Aarav Sharma' } } });
-  check('demo session is restored on reload', inStore(w));
+  check('quick demo bypass is removed', !w.document.querySelector('#quickDemoBtn'));
+  check('stale demo session is cleared', w.localStorage.getItem('ecocart_auth_user') === null);
 
   // 13. Supabase library failed to load
   w = await boot({ noSupabase: true });
@@ -140,10 +144,42 @@ async function fillRegister(w) {
   await fillLogin(w, 'real@example.com', 'secret123'); submit(w, '#loginForm'); await tick();
   check('login is refused (not faked) when the account service is unavailable', !inStore(w) && /unavailable/i.test(feedback(w)), feedback(w));
 
-  // 14. API base URL selection
-  check('production build targets the deployed backend', w.__api === 'https://ecocart-backend-1h0l.onrender.com', w.__api);
+  // 14. API base URL selection. A hosted backend is configured in ignored config.js.
+  check('production has no hard-coded deployment URL', w.__api === '', w.__api);
   const local = await boot({ url: 'http://localhost:5500/' });
   check('localhost build targets the local backend', local.__api === 'http://localhost:8000', local.__api);
+
+  // 15. Password visibility toggle never exposes the password by default.
+  w = await boot();
+  w.document.querySelector('#authSwitch button').click();
+  const toggle = w.document.querySelector('[data-password-toggle="loginPassword"]');
+  toggle.click();
+  check('password visibility can be toggled', w.document.querySelector('#loginPassword').type === 'text' && toggle.textContent === 'Hide');
+  toggle.click();
+  check('password visibility can be hidden again', w.document.querySelector('#loginPassword').type === 'password' && toggle.textContent === 'Show');
+
+  // 16. Password recovery sends a secure email redirect without account enumeration.
+  let resetOptions;
+  w = await boot({ auth: { resetPasswordForEmail: async (_email, options) => { resetOptions = options; return { error: null }; } } });
+  w.document.querySelector('#authSwitch button').click();
+  w.document.querySelector('[data-auth-mode="forgot"]').click();
+  set(w, '#forgotPasswordEmail', 'real@example.com'); submit(w, '#forgotPasswordForm'); await tick();
+  check('forgot password requests a reset email', resetOptions?.redirectTo === 'https://ecocart-delta.vercel.app/?reset-password=1', resetOptions?.redirectTo);
+  check('forgot password shows neutral success feedback', /if an account exists/i.test(feedback(w)), feedback(w));
+
+  // 17. A recovery session may update its password after confirmation.
+  let updatedPassword;
+  w = await boot({ url: 'https://ecocart-delta.vercel.app/?reset-password=1', auth: { updateUser: async ({ password }) => { updatedPassword = password; return { error: null }; } } });
+  set(w, '#newPassword', 'new-secret'); set(w, '#confirmPassword', 'new-secret'); submit(w, '#resetPasswordForm'); await tick();
+  check('recovery flow updates password', updatedPassword === 'new-secret');
+  check('recovery flow returns to sign-in', !w.document.querySelector('#loginForm').hidden && /password updated/i.test(feedback(w)), feedback(w));
+
+  // 18. Provider/AI text must be inserted as text, never executable markup.
+  w = await boot();
+  w.appendChatMessage('ai', '<img src=x onerror="window.__xss = true"> **safe**');
+  const lastMessage = w.document.querySelector('#ecochatMessages .chat-msg:last-child');
+  check('chat text is not interpreted as HTML', !lastMessage.querySelector('img') && !w.__xss, lastMessage.innerHTML);
+  check('chat markdown remains readable', lastMessage.querySelector('strong')?.textContent === 'safe');
 
   console.log(failures === 0 ? '\nALL FRONTEND AUTH CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);

@@ -116,9 +116,11 @@ async function checkBackendHealth() {
 const authScreen   = document.querySelector('#authScreen');
 const registerForm = document.querySelector('#registerForm');
 const loginForm    = document.querySelector('#loginForm');
+const forgotPasswordForm = document.querySelector('#forgotPasswordForm');
+const resetPasswordForm = document.querySelector('#resetPasswordForm');
 const feedback     = document.querySelector('#authFeedback');
-const quickDemoBtn = document.querySelector('#quickDemoBtn');
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+const isPasswordRecovery = new URLSearchParams(window.location.search).has('reset-password');
 let currentUser    = null;
 
 function showFeedback(message, isSuccess = false) {
@@ -128,17 +130,31 @@ function showFeedback(message, isSuccess = false) {
 
 function setAuthMode(mode) {
   const isLogin = mode === 'login';
-  registerForm.hidden = isLogin;
+  const isForgot = mode === 'forgot';
+  const isReset = mode === 'reset';
+  registerForm.hidden = isLogin || isForgot || isReset;
   loginForm.hidden = !isLogin;
+  forgotPasswordForm.hidden = !isForgot;
+  resetPasswordForm.hidden = !isReset;
   document.querySelector('#authTitle').innerHTML = isLogin
     ? 'Welcome<br /><em>back.</em>'
-    : 'Join the<br /><em>movement.</em>';
+    : isForgot
+      ? 'Reset your<br /><em>password.</em>'
+      : isReset
+        ? 'Choose a new<br /><em>password.</em>'
+        : 'Join the<br /><em>movement.</em>';
   document.querySelector('#authSubtitle').textContent = isLogin
     ? 'Sign in to continue your sustainable shopping journey.'
-    : 'Create your account and start shopping with impact.';
+    : isForgot
+      ? 'Enter your email and we’ll help you get back in.'
+      : isReset
+        ? 'Your new password will secure your EcoCart account.'
+        : 'Create your account and start shopping with impact.';
   document.querySelector('#authSwitch').innerHTML = isLogin
     ? 'New to EcoCart? <button type="button" data-auth-mode="register">Create an account</button>'
-    : 'Already have an account? <button type="button" data-auth-mode="login">Sign in</button>';
+    : isReset
+      ? ''
+      : 'Already have an account? <button type="button" data-auth-mode="login">Sign in</button>';
   feedback.className = 'auth-feedback';
   feedback.textContent = '';
 }
@@ -149,13 +165,8 @@ function updateProfile(user) {
     .split(/\s+/).map(part => part[0]).join('').slice(0, 2).toUpperCase();
 }
 
-function isDemoUser(user) {
-  return String(user?.id || '').startsWith('demo-');
-}
-
 function enterStore(user) {
   currentUser = user;
-  if (isDemoUser(user)) saveSession(user);
   updateProfile(user);
   authScreen.classList.add('is-hidden');
   loadProductCatalog();
@@ -178,21 +189,21 @@ function setLoading(form, label, isLoading) {
     : button.dataset.defaultLabel;
 }
 
-registerForm.querySelector('button').dataset.defaultLabel = registerForm.querySelector('button').innerHTML;
-loginForm.querySelector('button').dataset.defaultLabel    = loginForm.querySelector('button').innerHTML;
+for (const form of [registerForm, loginForm, forgotPasswordForm, resetPasswordForm]) {
+  const submitButton = form.querySelector('button[type="submit"]');
+  submitButton.dataset.defaultLabel = submitButton.innerHTML;
+}
 
-// Quick Demo Login Button
-quickDemoBtn?.addEventListener('click', () => {
-  const demoUser = {
-    id: 'demo-user-aarav-sharma',
-    email: 'aarav.sharma@ecocart.dev',
-    user_metadata: {
-      full_name: 'Aarav Sharma',
-      phone: '+91 98765 43210'
-    }
-  };
-  enterStore(demoUser);
-  showToast('Signed in as Aarav Sharma (Demo Mode) ✦');
+document.addEventListener('click', event => {
+  const toggle = event.target.closest('[data-password-toggle]');
+  if (!toggle) return;
+  const input = document.querySelector(`#${toggle.dataset.passwordToggle}`);
+  if (!input) return;
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  toggle.textContent = reveal ? 'Hide' : 'Show';
+  toggle.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+  toggle.setAttribute('aria-pressed', String(reveal));
 });
 
 // Register Form Submit
@@ -212,7 +223,7 @@ registerForm.addEventListener('submit', async event => {
 
   if (!supabaseClient) {
     setLoading(registerForm, '', false);
-    return showFeedback('The account service is unavailable right now. Please try again shortly, or explore with the demo.');
+    return showFeedback('The account service is unavailable. Check the deployed Supabase configuration and try again.');
   }
 
   try {
@@ -257,7 +268,7 @@ loginForm.addEventListener('submit', async event => {
 
   if (!supabaseClient) {
     setLoading(loginForm, '', false);
-    return showFeedback('The account service is unavailable right now. Please try again shortly, or explore with the demo.');
+    return showFeedback('The account service is unavailable. Check the deployed Supabase configuration and try again.');
   }
 
   try {
@@ -277,6 +288,50 @@ loginForm.addEventListener('submit', async event => {
   } catch (err) {
     setLoading(loginForm, '', false);
     showFeedback('Could not reach the account service. Please check your connection and try again.');
+  }
+});
+
+forgotPasswordForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const email = document.querySelector('#forgotPasswordEmail').value.trim().toLowerCase();
+  if (!validEmail(email)) return showFeedback('Please enter a valid email address.');
+  if (!supabaseClient) return showFeedback('The account service is unavailable. Check the deployed Supabase configuration and try again.');
+
+  setLoading(forgotPasswordForm, 'Sending reset link…', true);
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/?reset-password=1`,
+    });
+    setLoading(forgotPasswordForm, '', false);
+    if (error) return showFeedback('We could not send a reset link right now. Please try again shortly.');
+    setAuthMode('login');
+    showFeedback('If an account exists for that email, a secure password-reset link has been sent.', true);
+  } catch {
+    setLoading(forgotPasswordForm, '', false);
+    showFeedback('We could not send a reset link right now. Please try again shortly.');
+  }
+});
+
+resetPasswordForm.addEventListener('submit', async event => {
+  event.preventDefault();
+  const password = document.querySelector('#newPassword').value;
+  const confirm = document.querySelector('#confirmPassword').value;
+  if (password.length < 6) return showFeedback('Your password must be at least 6 characters long.');
+  if (password !== confirm) return showFeedback('The two passwords do not match.');
+  if (!supabaseClient) return showFeedback('The account service is unavailable. Check the deployed Supabase configuration and try again.');
+
+  setLoading(resetPasswordForm, 'Updating password…', true);
+  try {
+    const { error } = await supabaseClient.auth.updateUser({ password });
+    setLoading(resetPasswordForm, '', false);
+    if (error) return showFeedback('This recovery link is invalid or has expired. Request a new one.');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    setAuthMode('login');
+    loginForm.reset();
+    showFeedback('Password updated. You can now sign in.', true);
+  } catch {
+    setLoading(resetPasswordForm, '', false);
+    showFeedback('This recovery link is invalid or has expired. Request a new one.');
   }
 });
 
@@ -1060,14 +1115,14 @@ checkBackendHealth();
 // temporal-dead-zone rules for later `let` and `const` declarations.
 // Only the local demo user is restored from localStorage; real users are
 // restored from their verified Supabase session.
-const savedUser = getSavedSession();
-if (savedUser && isDemoUser(savedUser)) {
-  enterStore(savedUser);
-} else {
-  if (savedUser) clearSession();
-  if (supabaseClient) {
-    supabaseClient.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) enterStore(session.user);
-    }).catch(() => {});
-  }
+clearSession();
+if (isPasswordRecovery) setAuthMode('reset');
+if (supabaseClient) {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') setAuthMode('reset');
+    else if (event === 'SIGNED_IN' && session?.user && !isPasswordRecovery) enterStore(session.user);
+  });
+  supabaseClient.auth.getSession().then(({ data: { session } }) => {
+    if (session?.user && !isPasswordRecovery) enterStore(session.user);
+  }).catch(() => {});
 }

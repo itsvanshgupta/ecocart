@@ -1164,6 +1164,11 @@ dialog::backdrop { background: rgba(16, 37, 27, 0.6); backdrop-filter: blur(2px)
 .auth-submit { width: 100%; height: 48px; justify-content: space-between; margin-top: 7px; padding: 0 22px; }
 .auth-switch { font-size: 12px; text-align: center; color: #637167; margin: 22px 0 0; }
 .auth-switch button { background: none; color: var(--green); font-size: 12px; font-weight: 800; padding: 0; text-decoration: underline; text-underline-offset: 3px; }
+.password-field { display: block; position: relative; }
+.password-field input { padding-right: 66px; }
+.password-toggle { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: transparent; color: var(--green); font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700; padding: 5px; }
+.forgot-password-link { display: block; margin: -3px 0 16px auto; padding: 0; background: transparent; color: var(--green); font-size: 11px; font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.auth-helper { color: #637167; font-size: 11px; line-height: 1.55; margin: -4px 0 18px; }
 .auth-feedback { min-height: 19px; margin-top: 14px; color: transparent; font-size: 11px; text-align: center; font-weight: 700; }
 .auth-feedback.error { color: #b2371f; background: #f8dfd5; border-radius: 3px; padding: 9px 12px; }
 .auth-feedback.success { color: #2a6741; background: #d9eed3; border-radius: 3px; padding: 9px 12px; }
@@ -1434,4 +1439,3 @@ dialog::backdrop { background: rgba(16, 37, 27, 0.6); backdrop-filter: blur(2px)
   .backend-status-badge { display: none; }
   .ecochat-drawer { width: calc(100vw - 30px); right: -10px; }
 }
-

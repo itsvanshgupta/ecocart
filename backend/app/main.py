@@ -63,17 +63,17 @@ app.add_middleware(
 
 # ── Request / Response Schemas ──────────────────────────────────────────────
 class GradeRequest(BaseModel):
-    product_name: str = Field(..., json_schema_extra={"example": "Cloud Cotton Towels"})
-    material: str = Field(..., json_schema_extra={"example": "GOTS organic cotton"})
-    packaging: str = Field(..., json_schema_extra={"example": "Plastic-free paper wrap"})
-    origin_country: Optional[str] = Field("India", json_schema_extra={"example": "India"})
-    certification: Optional[str] = Field("GOTS", json_schema_extra={"example": "GOTS"})
+    product_name: str = Field(..., min_length=1, max_length=200, json_schema_extra={"example": "Cloud Cotton Towels"})
+    material: str = Field(..., min_length=1, max_length=500, json_schema_extra={"example": "GOTS organic cotton"})
+    packaging: str = Field(..., min_length=1, max_length=500, json_schema_extra={"example": "Plastic-free paper wrap"})
+    origin_country: Optional[str] = Field("India", max_length=100, json_schema_extra={"example": "India"})
+    certification: Optional[str] = Field("GOTS", max_length=200, json_schema_extra={"example": "GOTS"})
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(..., json_schema_extra={"example": "Why is bamboo better than conventional cotton?"})
+    message: str = Field(..., min_length=1, max_length=2_000, json_schema_extra={"example": "Why is bamboo better than conventional cotton?"})
     history: Optional[List[Dict[str, str]]] = Field(default_factory=list)
-    product_context: Optional[str] = Field(None, json_schema_extra={"example": "Viewing Bamboo Everyday Tee"})
+    product_context: Optional[str] = Field(None, max_length=2_000, json_schema_extra={"example": "Viewing Bamboo Everyday Tee"})
 
 
 # ── API Endpoints ───────────────────────────────────────────────────────────

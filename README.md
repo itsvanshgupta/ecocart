@@ -2,7 +2,7 @@
 
 > **Conscious commerce driven by explainable AI eco-grading, semantic (RAG) product swaps, and community group buying.**
 
-**Live demo:** [ecocart-delta.vercel.app](https://ecocart-delta.vercel.app) &nbsp;·&nbsp; **API docs:** `/docs` on the deployed backend &nbsp;·&nbsp; **Cost to run: $0**
+**Demo-ready:** supports a no-credential local demo mode. Configure the optional Supabase, Gemini, and AWS integrations below to enable the full hosted experience.
 
 EcoCart helps shoppers make lower-carbon choices. Every product carries an explainable **A–F eco-grade** across five dimensions (materials, packaging, carbon, ethics, durability). A **RAG pipeline on Supabase `pgvector`** surfaces greener like-for-like alternatives, a personal **impact dashboard** turns purchases into real-world CO₂ equivalents, and **group buying** unlocks collective discounts with live progress.
 
@@ -54,6 +54,7 @@ ecocart/
 │   ├── index.html
 │   ├── styles.css
 │   └── app.js                  # Supabase client + FastAPI client
+│   └── config.example.js        # Copy to ignored config.js for browser-safe settings
 ├── backend/                    # FastAPI service
 │   ├── app/
 │   │   ├── main.py             # Routes, CORS, chat cache + rate limiting
@@ -69,6 +70,7 @@ ecocart/
 ├── tests/frontend/             # jsdom tests for the client (auth, sessions)
 ├── supabase/                   # SQL: schema, RLS, pgvector, seed data
 ├── template.yaml               # AWS SAM template (Lambda + Function URL + log group)
+├── docker-compose.yml           # Local FastAPI container with a health check
 ├── infra/
 │   └── github-oidc-bootstrap.yaml   # One-time: GitHub OIDC role + artifact bucket + spend alarm
 ├── .github/workflows/
@@ -81,7 +83,7 @@ ecocart/
 
 ## Run locally
 
-**Prerequisites:** Python 3.12+, a browser. A free [Gemini API key](https://aistudio.google.com) is optional (without it the app uses its rule engine).
+**Prerequisites:** Python 3.12+ and Node 24+ (for frontend tests). A free [Gemini API key](https://aistudio.google.com) is optional; without it the API uses its rule engine.
 
 ```powershell
 # Backend
@@ -89,19 +91,37 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements-dev.txt
-copy .env.example .env        # then fill in your keys
+Copy-Item .env.example .env   # optional keys can stay blank
 uvicorn app.main:app --reload --port 8000
 ```
+
+If you use Command Prompt (`cmd.exe`) rather than PowerShell, replace `Copy-Item` with `copy`; for example: `copy .env.example .env`.
 
 API at `http://localhost:8000` (Swagger UI at `/docs`, health at `/health`, database check at `/health/db`).
 
 ```powershell
 # Frontend (second terminal)
 cd frontend
+Copy-Item config.example.js config.js
 python -m http.server 5500
 ```
 
+In Command Prompt, use `copy config.example.js config.js` instead.
+
 Open `http://localhost:5500`. The client automatically targets `localhost:8000` when served from localhost.
+
+`frontend/config.js` is deliberately ignored by Git. Set only the browser-safe values there: `apiBaseUrl`, `supabaseUrl`, and the Supabase anon/publishable key. Never put the Supabase service-role key, Gemini key, Groq key, or AWS credentials in that file.
+
+### Docker
+
+Docker runs the FastAPI API only; serve the static `frontend/` directory with Vercel or any static server.
+
+```powershell
+Copy-Item backend/.env.example backend/.env
+docker compose up --build
+```
+
+The image runs as a non-root user and its build context excludes `.env` files. Visit `http://localhost:8000/health` to check it. If port 8000 is occupied, use `$env:API_PORT=8001; docker compose up --build`.
 
 **Embed the catalog** (once, after creating the Supabase project and running the SQL in `supabase/`):
 
@@ -122,7 +142,7 @@ python -m pytest -q
 
 Frontend auth tests (Node 24+): `cd tests/frontend && npm ci && npm test`.
 
-38 backend tests run fully offline (no API keys, no network). They cover heuristic grading, the Gemini → Groq → rule-engine failover, the chat cache and rate limiter, CORS, pgvector recommendation logic, and the **AWS Lambda handler invoked with a real Function URL event**.
+The backend suite runs fully offline (no API keys or network). It covers heuristic grading, the Gemini → Groq → rule-engine failover, the chat cache and rate limiter, CORS, pgvector recommendation logic, request validation, and the **AWS Lambda handler invoked with a real Function URL event**. The frontend suite covers authentication/session behavior and safe rendering of AI text.
 
 ---
 
@@ -168,7 +188,21 @@ The backend runs on **AWS Lambda behind a Function URL**. Lambda's Always Free t
 
 **3. Deploy:** GitHub → Actions → **CI/CD** → **Run workflow** (or push to `main`). When it finishes, the run summary shows the live API URL.
 
-**4. Point the frontend at it:** set `API_BASE_URL` in `frontend/app.js` to the Function URL, set the repository variable `BACKEND_URL` to the same URL (so the keep-alive job keeps Supabase awake), and push.
+**4. Point the frontend at it:** set Vercel's `ECOCART_API_BASE_URL` variable to the Function URL, set the repository variable `BACKEND_URL` to the same URL (so the keep-alive job keeps Supabase awake), and push.
+
+## Vercel frontend deployment
+
+Import the GitHub repository into Vercel. The included deployment configuration supports either the repository root or `frontend/` as Vercel's Root Directory, and generates the ignored `frontend/config.js` during each build; do not upload your local config file. Add these **Production** environment variables in **Vercel → Project Settings → Environment Variables**:
+
+| Name | Value |
+|---|---|
+| `ECOCART_API_BASE_URL` *(optional)* | Deployed AWS Lambda Function URL, without a trailing slash |
+| `ECOCART_SUPABASE_URL` | Supabase Project URL |
+| `ECOCART_SUPABASE_PUBLISHABLE_KEY` | Supabase `sb_publishable_...` key |
+
+Then deploy. These are browser-facing values, not secrets. `SUPABASE_SERVICE_ROLE_KEY`, Gemini, Groq, and AWS credentials must only be configured in the backend or GitHub/AWS secret stores.
+
+In Supabase **Authentication → URL Configuration**, set the Site URL to the Vercel production URL and add both the exact production URL and `https://*.vercel.app/**` to Redirect URLs. This enables confirmation and password-recovery emails to return to EcoCart.
 
 ---
 
@@ -204,6 +238,8 @@ The backend runs on **AWS Lambda behind a Function URL**. Lambda's Always Free t
 ## Security
 
 - **Row Level Security** on user-owned tables. Verified end to end for the carbon log: a signed-in user can insert their own rows but not another user's.
-- **Secrets** live only in GitHub Actions secrets and Lambda environment variables. `.env` files are git-ignored, and a scan of the repository history found no secret keys.
+- **Secrets** live only in ignored `.env` files, GitHub Actions secrets, and Lambda environment variables. `frontend/config.js` contains browser-safe public configuration only; service-role and AI keys must never be placed there.
+- **Safe AI rendering:** model output is added as text/DOM nodes, not unsanitized HTML, so a provider response cannot execute script in the browser.
+- **Container safety:** the API image runs as a non-root user and `.dockerignore` prevents local environment files from entering image layers.
 - **Keyless deployment:** GitHub authenticates to AWS with OIDC. The deploy role can be assumed only by this repository's `main` branch and can manage only the `ecocart-backend` stack.
 - **CORS** is restricted to the deployed frontend and localhost.
