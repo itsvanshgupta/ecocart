@@ -4,18 +4,18 @@
 // developing, the deployed Render URL everywhere else.
 
 const IS_LOCAL_HOST = ['localhost', '127.0.0.1'].includes(window.location.hostname);
-const API_BASE_URL = IS_LOCAL_HOST
-  ? 'http://localhost:8000'
-  : 'https://ecocart-backend-1h0l.onrender.com';
+const APP_CONFIG = window.ECOCART_CONFIG || {};
+const API_BASE_URL = (APP_CONFIG.apiBaseUrl || (IS_LOCAL_HOST ? 'http://localhost:8000' : '')).replace(/\/$/, '');
 
 // ─── Supabase client ────────────────────────────────────────────────────────
-// Replace with your real Supabase project URL and anon public key from supabase.com
-const SUPABASE_URL = 'https://deitynnbjeecmxasmufm.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_7E25OS9oBGkk-duRYNUz-Q_mmGitUuj';
+// The browser-facing anon key is intentionally public, but project values stay
+// in the ignored frontend/config.js rather than in source control.
+const SUPABASE_URL = APP_CONFIG.supabaseUrl || '';
+const SUPABASE_ANON_KEY = APP_CONFIG.supabaseAnonKey || '';
 
 let supabaseClient = null;
 try {
-  if (window.supabase && SUPABASE_URL && !SUPABASE_URL.includes('YOUR_PROJECT')) {
+  if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY && !SUPABASE_URL.includes('YOUR_PROJECT')) {
     supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
 } catch (e) {
@@ -106,7 +106,9 @@ async function checkBackendHealth() {
   } catch (err) {
     badge.className = 'backend-status-badge offline';
     badge.querySelector('.status-text').textContent = 'AI Offline';
-    badge.title = `FastAPI backend not detected at ${API_BASE_URL}. Start/wake the backend to enable live AI features.`;
+    badge.title = API_BASE_URL
+      ? `FastAPI backend not detected at ${API_BASE_URL}. Start/wake the backend to enable live AI features.`
+      : 'Set apiBaseUrl in frontend/config.js to enable live AI features.';
   }
 }
 
@@ -1004,23 +1006,43 @@ ecochatForm?.addEventListener('submit', async (e) => {
 function appendChatMessage(role, text) {
   const msgDiv = document.createElement('div');
   msgDiv.className = `chat-msg ${role}-msg`;
-  const icon = role === 'ai' ? '<span>🌿</span>' : '';
-  msgDiv.innerHTML = `${icon}<div class="msg-bubble">${formatChatText(text)}</div>`;
+  if (role === 'ai') {
+    const icon = document.createElement('span');
+    icon.textContent = '🌿';
+    msgDiv.appendChild(icon);
+  }
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  formatChatText(text).forEach(part => bubble.append(part));
+  msgDiv.appendChild(bubble);
   ecochatMessages.appendChild(msgDiv);
   ecochatMessages.scrollTop = ecochatMessages.scrollHeight;
 }
 
 function formatChatText(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br />');
+  const fragment = document.createDocumentFragment();
+  const lines = String(text || '').split('\n');
+  lines.forEach((line, lineIndex) => {
+    const pattern = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+    let cursor = 0;
+    for (const match of line.matchAll(pattern)) {
+      if (match.index > cursor) fragment.append(document.createTextNode(line.slice(cursor, match.index)));
+      const token = match[0];
+      const element = document.createElement(token.startsWith('**') ? 'strong' : 'em');
+      element.textContent = token.slice(token.startsWith('**') ? 2 : 1, token.startsWith('**') ? -2 : -1);
+      fragment.append(element);
+      cursor = match.index + token.length;
+    }
+    if (cursor < line.length) fragment.append(document.createTextNode(line.slice(cursor)));
+    if (lineIndex < lines.length - 1) fragment.append(document.createElement('br'));
+  });
+  return [...fragment.childNodes];
 }
 
 // ─── Toast helper ───────────────────────────────────────────────────────────
 function showToast(message) {
   const toast = document.querySelector('#toast');
-  toast.innerHTML = `${message} <span>✦</span>`;
+  toast.textContent = `${message} ✦`;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 2800);
 }
