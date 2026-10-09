@@ -108,13 +108,20 @@ jobs:
           python - <<'PY'
           import os, json, base64, urllib.request
 
+          from urllib.parse import urlencode
+
+          url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+          url += ("&" if "?" in url else "?") + urlencode({
+              "audience": "sts.amazonaws.com"
+          })
+
           req = urllib.request.Request(
-              os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"],
+              url,
               headers={
                   "Authorization": "Bearer "
                   + os.environ["ACTIONS_ID_TOKEN_REQUEST_TOKEN"]
-              },
-              )
+          },
+          )
           with urllib.request.urlopen(req) as response:
               token = json.load(response)["value"]
 
